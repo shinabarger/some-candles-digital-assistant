@@ -1,0 +1,1788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Some Candles &mdash; Table Companion</title>
+<style>
+  :root{
+    --bg:#0a0908;
+    --panel:#151210;
+    --panel-border:rgba(255,175,90,0.22);
+    --text:#e9dcc8;
+    --dim:#9a8f7f;
+    --flame:#ff9d3c;
+    --flame2:#ffd27a;
+    /* Deuteranopia/protanopia-safe status colors: a blue for success and a magenta/plum for
+       danger or failure, deliberately avoiding red and avoiding a red-vs-green pairing.
+       Text labels (SUCCESS/FAILURE, chip names, etc.) always carry the meaning too, so color
+       is never the only signal. */
+    --danger:#b5568f;
+    --success:#3f8fd1;
+    --hope:#e8c368;
+    --gm:#6a4b8a;
+    /* Muted, hand-drawn candle palette (no glossy wax) in the spirit of Don't Starve's
+       desaturated, heavily-outlined art style. */
+    --candle-body:#a89968;
+    --candle-body-unlit:#5c5646;
+    --candle-holder:#241a12;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:radial-gradient(ellipse at top, #14100c 0%, #050403 70%);
+    color:var(--text); font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height:100vh;
+  }
+  /* Visible keyboard-focus ring everywhere (WCAG 2.4.7) */
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+  [tabindex]:focus-visible, summary:focus-visible{
+    outline:3px solid var(--flame2); outline-offset:2px;
+  }
+  .skip-link{
+    position:absolute; left:8px; top:-60px; z-index:100; background:var(--flame); color:#1a1006;
+    padding:10px 16px; border-radius:6px; font-weight:700; text-decoration:none; transition:top .15s;
+  }
+  .skip-link:focus{ top:8px; }
+  @media (prefers-reduced-motion: reduce){
+    /* Slow the ambient flicker down rather than freezing it outright: a candle that never moves
+       at all reads as broken, and the flame is core to the theme, not just decoration. Only the
+       sharper, more sudden motion (smoke drift, the snuff-out puff, the status pulse) is fully
+       disabled, since those are the kind most likely to bother someone with this preference set. */
+    .flame-outer, .flame-inner, .candle-glow{ animation-duration:3s !important; }
+    .smoke-wisp, .flame-outer.snuffing, .flame-inner.snuffing, .snuff-glow, .puff-smoke,
+    #status-banner.laststand{ animation:none !important; }
+  }
+  button{
+    font-family:inherit; cursor:pointer; border-radius:6px; border:1px solid var(--panel-border);
+    background:#211a14; color:var(--text); padding:8px 12px; font-size:14px; transition:all .15s;
+  }
+  button:hover:not(:disabled){ background:#332619; border-color:var(--flame); }
+  button:disabled{ opacity:0.35; cursor:not-allowed; }
+  button.primary{ background:linear-gradient(180deg,#7a3a1e,#5a2a15); border-color:var(--flame); font-weight:600; }
+  button.primary:hover:not(:disabled){ background:linear-gradient(180deg,#8a441f,#6a3016); }
+  button.danger{ border-color:var(--danger); }
+  button.danger:hover:not(:disabled){ background:#34172c; }
+  button.success{ border-color:var(--success); }
+  input[type=text]{
+    background:#1a1512; border:1px solid var(--panel-border); color:var(--text);
+    padding:7px 10px; border-radius:6px; font-size:14px; width:100%;
+  }
+  h1,h2,h3{ margin:0 0 8px 0; font-weight:600; letter-spacing:0.5px; }
+  .hidden{ display:none !important; }
+  a{color:var(--flame2);}
+
+  /* ---------- Setup screen ---------- */
+  #setup-screen{ max-width:640px; margin:0 auto; padding:48px 20px; }
+  #setup-screen h1{ font-size:32px; text-align:center; color:var(--flame2); text-shadow:0 0 18px rgba(255,157,60,0.4); }
+  #setup-screen p.sub{ text-align:center; color:var(--dim); margin-bottom:28px; }
+  .setup-field{ margin-bottom:10px; }
+  .setup-field label{ display:block; font-size:12px; color:var(--dim); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px; }
+  .setup-actions{ display:flex; justify-content:space-between; margin-top:24px; }
+  .setup-note{ font-size:13px; color:var(--dim); line-height:1.5; background:var(--panel); border:1px solid var(--panel-border); border-radius:8px; padding:14px; margin-top:20px; }
+
+  /* ---------- Header ---------- */
+  /* Sized about 10% smaller across the board (padding, title, candles) so it takes up noticeably
+     less of the screen while everything stays legible. */
+  #app-header{
+    position:sticky; top:0; z-index:20; background:rgba(8,6,5,0.92); backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--panel-border); padding:9px 14px;
+  }
+  .header-row{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .header-title-stack{ display:flex; flex-direction:column; align-items:flex-start; gap:1px; }
+  .header-title{
+    font-size:31px; margin:0; color:var(--flame2); letter-spacing:3px; text-transform:uppercase;
+    white-space:nowrap; font-weight:800; text-shadow:0 0 18px rgba(255,157,60,0.45);
+    display:flex; align-items:center;
+  }
+  .header-btns{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  #candle-row{
+    display:flex; justify-content:center; align-items:flex-end; gap:9px; padding:7px 0;
+    flex-wrap:wrap; flex:1 1 320px;
+  }
+
+  /* Hand-drawn, muted candle icons in the spirit of Don't Starve's art style: bold, slightly
+     uneven black ink outlines, flat desaturated color (no glossy gradients or dripping wax),
+     and thin cross-hatch strokes standing in for pen shading. */
+  .candle-slot{ background:none; border:none; padding:0; margin:0; display:block; line-height:0; }
+  /* A little candle-snuffer (bell + handle) standing in for the pointer cursor while hovering a
+     lit candle, drawn in the same muted palette and ink-outline style as the candles themselves,
+     with the hotspot at the base of the bell where it would actually touch the flame. */
+  .candle-slot.lit-slot{
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M16 4 L25 17 A9 4 0 0 1 7 17 Z' fill='%23a89968' stroke='%231c1108' stroke-width='2' stroke-linejoin='round'/%3E%3Crect x='13.5' y='17' width='5' height='12' rx='1.5' fill='%23241a12' stroke='%231c1108' stroke-width='2'/%3E%3C/svg%3E") 16 18, pointer;
+  }
+  .candle-slot.lit-slot:hover .candle-icon, .candle-slot.lit-slot:focus-visible .candle-icon{ filter:brightness(1.18); }
+  .candle-slot:disabled, .candle-slot.unlit-slot{ cursor:default; }
+  .candle-icon{ width:50px; height:auto; overflow:visible; display:block; }
+  .candle-body{ fill:var(--candle-body); stroke:#1c1108; stroke-width:3; stroke-linejoin:round; }
+  .candle-body-unlit{ fill:var(--candle-body-unlit); stroke:#1c1108; stroke-width:3; stroke-linejoin:round; }
+  .candle-holder{ fill:var(--candle-holder); stroke:#1c1108; stroke-width:3; stroke-linejoin:round; }
+  .candle-hatch{ fill:none; stroke:#1c1108; stroke-width:1.5; stroke-linecap:round; opacity:0.3; }
+  .candle-wick{ fill:#241a12; stroke:#1c1108; stroke-width:1.5; stroke-linejoin:round; }
+  .candle-wick-burnt{ fill:none; stroke:#241a12; stroke-width:3; stroke-linecap:round; }
+
+  /* The flicker animation lives directly on the flame paths (leaf <path> elements) rather than
+     on a wrapping <g>: transform-box:fill-box on a <g> container has a history of unreliable
+     support across browser engines, while it's solid on basic shapes like <path>/<circle>. This
+     is what actually makes the flicker show up consistently, not just in one browser. Duration
+     and delay come from CSS custom properties set per-candle (in inline style, inherited from
+     the enclosing <svg>) with genuinely random values picked in JS, so every candle in the row
+     flickers on its own random rhythm instead of in lockstep. */
+  .candle-glow{ fill:var(--flame); opacity:0.4; transform-box:fill-box; transform-origin:center; animation:glowPulse var(--fdur,0.5s) ease-in-out infinite; animation-delay:var(--fd,0s); }
+  .flame-outer{
+    fill:var(--flame); stroke:#3a1400; stroke-width:2.5; stroke-linejoin:round;
+    transform-box:fill-box; transform-origin:50% 100%;
+    animation:candleFlicker var(--fdur,0.5s) ease-in-out infinite; animation-delay:var(--fd,0s);
+  }
+  .flame-inner{
+    fill:#fff2b0; stroke:#3a1400; stroke-width:1.25; stroke-linejoin:round;
+    transform-box:fill-box; transform-origin:50% 100%;
+    animation:candleFlicker var(--fdur,0.5s) ease-in-out infinite reverse; animation-delay:var(--fd,0s);
+  }
+  .smoke-wisp{
+    fill:none; stroke:rgba(190,186,178,0.6); stroke-width:2.5; stroke-linecap:round;
+    transform-box:fill-box; transform-origin:50% 100%;
+    animation:smokeDrift var(--sdur,4.2s) ease-in-out infinite; animation-delay:var(--sd,0s);
+  }
+  /* Uneven keyframe spacing (not a smooth symmetric sine wave) reads as a real, jittery flicker
+     instead of a slow, obvious sway. Runs fast (see FLAME_DURATION_* constants in JS) so it's
+     unmistakably alive rather than a gentle breathing motion. Opacity is folded into the same
+     keyframes so the flame also dims and brightens as it moves, not just changes shape. */
+  @keyframes candleFlicker{
+    0%{ transform:translateY(0) scale(1,1) rotate(0deg); opacity:1; }
+    8%{ transform:translateY(-1.5px) scale(0.78,1.28) rotate(-11deg); opacity:0.75; }
+    19%{ transform:translateY(0.5px) scale(1.22,0.8) rotate(9deg); opacity:1; }
+    33%{ transform:translateY(-1px) scale(0.86,1.16) rotate(-6deg); opacity:0.6; }
+    47%{ transform:translateY(1px) scale(1.28,0.76) rotate(12deg); opacity:1; }
+    61%{ transform:translateY(-2px) scale(0.72,1.32) rotate(-13deg); opacity:0.5; }
+    78%{ transform:translateY(0.5px) scale(1.14,0.9) rotate(6deg); opacity:0.85; }
+    92%{ transform:translateY(-0.5px) scale(0.94,1.08) rotate(-4deg); opacity:1; }
+    100%{ transform:translateY(0) scale(1,1) rotate(0deg); opacity:1; }
+  }
+  @keyframes glowPulse{
+    0%,100%{ opacity:0.3; transform:scale(1); }
+    50%{ opacity:0.8; transform:scale(1.24); }
+  }
+  @keyframes smokeDrift{
+    0%{ transform:translateY(0) scale(1); opacity:0.05; }
+    30%{ opacity:0.5; }
+    100%{ transform:translateY(-14px) scale(1.15); opacity:0; }
+  }
+
+  /* One-shot "snuffing out" transition played briefly when a candle is clicked and confirmed:
+     a quick smoke puff bursts upward while the flame collapses, before the icon settles into its
+     permanent unlit state. The .snuffing modifier on the flame paths themselves overrides the
+     looping candleFlicker with a higher-specificity one-shot animation (same leaf-element
+     approach as the regular flicker, for the same cross-browser reliability reasons). */
+  .flame-outer.snuffing, .flame-inner.snuffing{
+    animation:snuffOut 0.6s ease-in forwards;
+  }
+  .snuff-glow{ animation:snuffGlow 0.6s ease-in forwards; }
+  .puff-smoke{
+    fill:none; stroke:rgba(214,210,200,0.85); stroke-width:4; stroke-linecap:round; opacity:0;
+    transform-box:fill-box; transform-origin:50% 100%;
+    animation:puffRise 0.9s ease-out forwards;
+  }
+  @keyframes snuffOut{
+    0%{ transform:scale(1,1); opacity:1; }
+    60%{ transform:scale(1.3,0.4) rotate(8deg); opacity:0.6; }
+    100%{ transform:scale(0.15,0.08); opacity:0; }
+  }
+  @keyframes snuffGlow{
+    0%{ opacity:0.45; }
+    100%{ opacity:0; }
+  }
+  @keyframes puffRise{
+    0%{ opacity:0; transform:translateY(0) scale(0.6); }
+    15%{ opacity:0.9; }
+    100%{ opacity:0; transform:translateY(-32px) scale(1.7); }
+  }
+  @media (max-width:900px){
+    .candle-icon{ width:30px; }
+  }
+  /* Sits directly under the title now (see .header-title-stack), so it's left-aligned rather
+     than centered across the whole header. */
+  #status-banner{ text-align:left; padding:0; color:var(--dim); line-height:1.2; }
+  /* "Scene N" reads as a heading, matching the same uppercase/letter-spaced/flame-colored
+     treatment as every panel's <h2>, since it's one of the most glanced-at pieces of state. */
+  .status-scene{
+    display:block; font-size:19px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px;
+    color:var(--flame2);
+  }
+  .status-sub{ display:block; font-size:12px; }
+  #status-banner.laststand{ color:var(--danger); animation:pulse 1.6s infinite; }
+  #status-banner.laststand .status-sub{ font-weight:700; letter-spacing:1px; text-transform:uppercase; }
+  #status-banner.gameover{ color:var(--flame2); }
+  #status-banner.gameover .status-sub{ font-weight:700; letter-spacing:1px; text-transform:uppercase; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.55;} }
+
+  /* ---------- Layout ---------- */
+  #game-body{
+    display:grid;
+    grid-template-columns: var(--left-w, 300px) 10px minmax(360px,1fr) 10px var(--right-w, 340px);
+    gap:14px; padding:14px; align-items:start;
+  }
+  .col-resizer{
+    align-self:stretch; cursor:col-resize; position:relative; background:transparent; border:none; padding:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .col-resizer::before{
+    content:''; width:3px; height:100%; min-height:200px; margin:0 auto; border-radius:3px;
+    background:var(--panel-border);
+  }
+  .col-resizer:hover::before, .col-resizer:focus-visible::before{ background:var(--flame); }
+  @media (max-width:1100px){
+    #game-body{ grid-template-columns:1fr; }
+    .col-resizer{ display:none; }
+  }
+  .panel{ background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:14px; }
+  .panel + .panel{ margin-top:14px; }
+  .panel h2{ font-size:13px; text-transform:uppercase; letter-spacing:1.5px; color:var(--flame2); border-bottom:1px solid var(--panel-border); padding-bottom:8px; }
+
+  /* Player cards */
+  .player-card{ border:1px solid var(--panel-border); border-radius:8px; padding:10px; margin-bottom:10px; background:rgba(255,255,255,0.02); }
+  .player-card.dead{ opacity:0.4; }
+  .player-card .pname{ font-weight:700; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .pname-edit-wrap{ display:flex; align-items:center; min-width:0; }
+  .player-name-edit{
+    font-weight:700; color:var(--text); border-bottom:1px dashed transparent; padding:1px 3px;
+    border-radius:3px; cursor:text; outline-offset:2px;
+  }
+  .player-name-edit:hover{ border-bottom-color:var(--panel-border); }
+  .player-name-edit:focus{ border-bottom-color:var(--flame); background:rgba(255,255,255,0.06); }
+  .chip-row{ display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+  .chip{ font-size:11px; padding:3px 7px; border-radius:20px; border:1px solid var(--panel-border); color:var(--dim); cursor:default; }
+  .chip.active{ border-color:var(--flame); color:var(--flame2); }
+  .chip.locked{ border-style:dashed; color:var(--dim); opacity:0.75; }
+  .chip.burned{ border-color:var(--danger); color:var(--danger); text-decoration:line-through; }
+  .chip.lived{ border-color:var(--success); color:var(--success); }
+  .chip.hope{ border-color:var(--hope); color:var(--hope); }
+  .mini-btn{ font-size:11px; padding:3px 7px; }
+  .player-actions{ display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+
+  /* Dice */
+  .dice-row{ display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; min-height:52px; align-items:center; }
+  .die{
+    width:42px; height:42px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+    font-size:19px; font-weight:700; background:#1e1a16; border:2px solid #444038; color:var(--text);
+  }
+  .die.six{ border-color:var(--success); color:#9cc9ec; box-shadow:0 0 10px rgba(63,143,209,0.5); }
+  .die.one{ border-color:var(--danger); color:#dd9dc5; }
+  .die.hopeDie{ border-color:var(--hope); background:#2a2210; }
+  .die.hopeDie.hit{ border-color:var(--hope); color:#ffe9a8; box-shadow:0 0 10px rgba(232,195,104,0.6); }
+  .die.gm{ border-color:var(--gm); background:#1e1626; }
+  .die.gm.six{ border-color:#dd9dc5; color:#e6b8da; box-shadow:0 0 10px rgba(181,86,143,0.5); }
+  .empty-note{ color:var(--dim); font-size:13px; font-style:italic; }
+
+  .outcome-badge{ display:inline-block; padding:4px 10px; border-radius:6px; font-weight:700; font-size:13px; letter-spacing:0.5px; }
+  .outcome-badge.success{ background:rgba(63,143,209,0.18); color:#9cc9ec; border:1px solid var(--success); }
+  .outcome-badge.failure{ background:rgba(181,86,143,0.18); color:#dd9dc5; border:1px solid var(--danger); }
+
+  /* Controls */
+  .field-row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  select{ background:#1a1512; color:var(--text); border:1px solid var(--panel-border); padding:7px; border-radius:6px; font-size:14px; }
+  .checkbox-label{ display:flex; align-items:center; gap:6px; font-size:13px; color:var(--dim); }
+  .btn-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+  .pool-stats{ display:flex; gap:14px; font-size:13px; color:var(--dim); margin-bottom:10px; flex-wrap:wrap; }
+  .pool-stats b{ color:var(--flame2); font-size:16px; }
+  hr.sep{ border:none; border-top:1px solid var(--panel-border); margin:12px 0; }
+
+  /* Log & Outcomes: a visually recessed "chat window" so it's obvious at a glance that it's its
+     own scrollable pane, distinct from the surrounding panel. The scrollbar thumb is reskinned to
+     look like a wood plank (grain via repeating stripes) — it's still the browser's native,
+     already-draggable scrollbar, just restyled, so scrolling behaves exactly as expected. */
+  #log-list{
+    max-height:640px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;
+    background:#0a0806; border:1px solid var(--panel-border); border-radius:8px; padding:10px;
+    box-shadow:inset 0 2px 10px rgba(0,0,0,0.55);
+    scrollbar-width:thin; scrollbar-color:#8a6440 #050403;
+  }
+  #log-list::-webkit-scrollbar{ width:14px; }
+  #log-list::-webkit-scrollbar-track{ background:#050403; border-radius:8px; }
+  #log-list::-webkit-scrollbar-thumb{
+    background:repeating-linear-gradient(180deg, #7a5432 0px, #8a6440 6px, #6a4526 12px);
+    border-radius:6px; border:2px solid #2b1a0e; background-clip:padding-box;
+  }
+  #log-list::-webkit-scrollbar-thumb:hover{
+    background:repeating-linear-gradient(180deg, #8a6440 0px, #9a7450 6px, #7a5532 12px);
+    background-clip:padding-box;
+  }
+  .log-entry{ font-size:12.5px; border-left:2px solid var(--panel-border); padding:4px 8px; line-height:1.4; }
+  .log-entry .actor{ color:var(--flame2); font-weight:700; }
+  .log-entry .time{ color:var(--dim); font-size:10.5px; float:right; }
+  /* Outcome entries answer "what happens next" (narration rights, scene end, play continuing)
+     and are styled distinctly so they stand out from the blow-by-blow action entries. */
+  .log-entry.outcome{ border-left-color:var(--success); background:rgba(63,143,209,0.08); font-style:italic; }
+  .log-entry.outcome .actor{ color:var(--success); }
+
+  /* Small hoverable/focusable "i" info icons next to rules terms that benefit from a quick
+     explanation without cluttering the layout with permanent text. */
+  .info-icon{
+    display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+    border-radius:50%; border:1px solid var(--panel-border); color:var(--dim); font-size:10px;
+    font-style:normal; font-weight:700; margin-left:5px; cursor:help; user-select:none; vertical-align:middle;
+  }
+  .info-icon:hover, .info-icon:focus-visible{ color:var(--flame2); border-color:var(--flame); }
+
+  /* Truths panel */
+  .truths-box{ background:rgba(255,157,60,0.06); border:1px dashed var(--panel-border); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .truths-box .ritual{ font-style:italic; color:var(--flame2); margin-bottom:6px; }
+
+  /* Threat generator */
+  .threat-card{
+    border:1px solid var(--panel-border); border-radius:8px; padding:12px; margin-bottom:10px;
+    background:rgba(106,75,138,0.06); display:flex; flex-wrap:wrap; gap:16px;
+  }
+  .threat-card.introduced{ border-color:var(--success); background:rgba(63,143,209,0.08); }
+  .threat-card .threat-col{ flex:1 1 260px; min-width:220px; }
+  .threat-card .threat-info{ border-right:1px dashed var(--panel-border); padding-right:16px; }
+  @media (max-width:620px){ .threat-card .threat-info{ border-right:none; padding-right:0; } }
+  .threat-card .t-title{ font-weight:700; color:var(--flame2); }
+  .threat-card .t-insp{ font-size:11px; color:var(--dim); font-style:italic; margin-bottom:6px; }
+  .threat-card .t-prompt{ font-size:12.5px; line-height:1.5; margin-bottom:6px; }
+  .threat-card .t-whisper{ font-size:11.5px; color:var(--hope); font-style:italic; }
+  .threat-card .t-ra-label{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--flame2); font-weight:700; margin-bottom:6px; }
+  .threat-card .t-ra-text{ font-size:13px; line-height:1.6; font-style:italic; color:var(--text); }
+  .threat-card .t-actions{ flex:1 1 100%; display:flex; gap:6px; flex-wrap:wrap; padding-top:10px; border-top:1px solid var(--panel-border); margin-top:2px; }
+  .threat-card .t-actions button{ font-size:12px; padding:5px 9px; }
+
+  details.info-drawer{ margin-top:14px; font-size:13px; color:var(--dim); }
+  details.info-drawer summary{ cursor:pointer; color:var(--flame2); font-weight:600; padding:6px 0; }
+  details.info-drawer ul{ padding-left:18px; line-height:1.6; margin-top:4px; margin-bottom:16px; }
+  details.info-drawer h4{ color:var(--flame2); font-size:13px; text-transform:uppercase; letter-spacing:0.5px; margin:16px 0 4px; border-bottom:1px solid var(--panel-border); padding-bottom:4px; }
+  details.info-drawer h4:first-of-type{ margin-top:6px; }
+  .footer-note{ text-align:center; color:var(--dim); font-size:11px; padding:20px 0; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
+<!-- ============ SETUP SCREEN ============ -->
+<div id="setup-screen">
+  <h1>🕯 SOME CANDLES</h1>
+  <p class="sub">A tabletop game of dwindling light and dark confessions &mdash; table companion</p>
+
+  <div class="setup-field">
+    <label for="gm-name-input">GM Name</label>
+    <input type="text" id="gm-name-input" placeholder="e.g. Dave">
+  </div>
+
+  <div id="player-fields"></div>
+  <div class="btn-grid">
+    <button id="add-player-btn" type="button">+ Add Player</button>
+    <button id="remove-player-btn" type="button">&minus; Remove Player</button>
+  </div>
+
+  <div class="setup-note">
+    Some Candles is best played with 2&ndash;5 players plus a GM. Before you start: everyone should already have
+    their Traits (virtue &amp; vice), Moment, and Brink written on index cards, and the GM should have Their Brink
+    ready. This app only tracks candles, the communal dice pool, dice rolls, and the action log &mdash; it doesn't
+    replace character creation or narration.
+  </div>
+
+  <div class="setup-actions">
+    <button type="button" id="skip-setup-btn" title="Fills in any blank names with defaults and starts right away">Skip setup</button>
+    <button class="primary" id="start-game-btn" type="button">Light the Candles &amp; Begin</button>
+  </div>
+</div>
+
+<!-- ============ GAME SCREEN ============ -->
+<div id="game-screen" class="hidden">
+  <header id="app-header">
+    <div class="header-row">
+      <div class="header-title-stack">
+        <h1 class="header-title">🕯 Some Candles</h1>
+        <div id="status-banner" role="status" aria-live="polite"></div>
+      </div>
+      <div id="candle-row" role="group"></div>
+      <div class="header-btns">
+        <button id="undo-btn" title="Undo last action">↶ Undo</button>
+        <button id="redo-btn" title="Redo">↷ Redo</button>
+        <button id="fullscreen-btn">⛶ Fullscreen</button>
+        <button id="new-game-btn" class="danger">New Game</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content" tabindex="-1">
+    <div id="game-body">
+      <!-- LEFT: Players & GM -->
+      <div id="left-col" class="col">
+        <div class="panel">
+          <h2>Survivors</h2>
+          <div id="players-list"></div>
+        </div>
+        <div class="panel">
+          <h2>The GM &amp; Them</h2>
+          <div id="gm-panel"></div>
+        </div>
+      </div>
+
+      <div class="col-resizer" id="resizer-left" role="separator" aria-orientation="vertical"
+           aria-label="Resize left column" tabindex="0" aria-valuemin="220" aria-valuemax="560"></div>
+
+      <!-- CENTER: Rolls & Controls -->
+      <div id="center-col" class="col">
+        <div class="panel">
+          <h2>Conflict Roll <span class="info-icon" tabindex="0" role="img" aria-label="More info" title="Roll the communal dice pool whenever a character attempts something risky, complex, or uncertain. Any 6 is a success. 1s are set aside for the rest of the scene. No 6s means failure, and a candle darkens.">i</span></h2>
+          <div id="roll-controls"></div>
+          <hr class="sep">
+          <div id="roll-display" aria-live="polite"></div>
+          <div id="post-roll-actions"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Establishing Truths</h2>
+          <div id="truths-panel"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Other Actions</h2>
+          <div class="btn-grid" id="misc-actions"></div>
+        </div>
+
+        <details class="info-drawer">
+          <summary>Rules quick-reference</summary>
+
+          <h4>When to Roll</h4>
+          <ul>
+            <li>Call for a conflict roll whenever a character attempts something complex, risky, or with a genuinely unknown outcome, kicking a door, searching a ruin, fighting Them, sneaking past a threat, recalling a critical detail under pressure.</li>
+            <li>Simple, certain actions (walking down a hallway, picking up an already-found item) don&rsquo;t need a roll &mdash; just narrate it. When in doubt, lean toward calling for a roll, since it's the main way players win narration and move the story forward.</li>
+            <li>Only one player rolls per conflict: whoever suggested the action or whose character is doing it. The same conflict can sometimes be reattempted by a different character for a different outcome, each attempt is its own roll.</li>
+            <li>The GM decides whether a conflict is a normal conflict, a Dire Conflict (see below), and whether a Moment or Brink applies &mdash; all of that is declared before dice are rolled.</li>
+          </ul>
+
+          <h4>Core Resolution</h4>
+          <ul>
+            <li><b>Conflict roll:</b> roll the communal pool. Any 6 = success. 1s are set aside for the rest of the scene. No 6s = failure, a candle darkens.</li>
+            <li><b>Hope dice:</b> succeed on 5 or 6, never lost to a 1. Only lost if a Brink reroll fails. Only 6s count toward narration rights.</li>
+            <li><b>Trait burn:</b> once per scene, reroll only the dice that show 1 after a conflict roll. Only one Trait (Virtue or Vice) can be active at a time &mdash; burning the active one activates the other.</li>
+            <li><b>Brink embrace:</b> reroll the entire pool. Success keeps the Brink (reusable). Failure burns the Brink, loses all hope dice, and darkens a candle.</li>
+            <li><b>Narration rights:</b> most 6&rsquo;s wins the right to narrate the outcome. Ties favor the GM. The GM always narrates a failed conflict.</li>
+            <li><b>Seizing narration:</b> the active player may darken a candle to take narration away from the GM, even on a success.</li>
+            <li><b>Establishing Truths:</b> after every darkened candle, speak truths equal to the new number of lit candles. Opens with "These things are true. The world is dark." and always ends with everyone saying "And we are alive." Only the GM may establish truths about Them, the dark, or the sunless sky.</li>
+            <li><b>The Last Stand:</b> when only 1 candle remains, failed conflicts kill the character instead of darkening the candle. A player with no dice left in the pool automatically fails (and dies) without rolling.</li>
+            <li>Their Brink may only ever establish a strength or identity &mdash; never a weakness. Their only weakness is light.</li>
+          </ul>
+
+          <h4>Key Definitions</h4>
+          <ul>
+            <li><b>Dire Conflict:</b> a conflict the GM flags in advance as carrying lethal or ruinous stakes if it fails (diving out of the way of an attack, a fall, a point-blank confrontation with Them). On a failed Dire Conflict, in addition to the normal candle darkening, any player, not just the one who rolled, may choose to have their own character die heroically instead of accepting the GM's outcome, taking over narration of the failure and the death. This is the only time a player narrates a failure. If the dying character had a Hope Die, it may pass to another survivor (Martyrdom).</li>
+            <li><b>Living a Moment:</b> once a character's Moment card is active, the player may declare they're living it, then burn the Moment card before rolling a single conflict roll. Success inspires hope: the character gains a Hope Die and the player narrates how it goes. Failure loses hope: no Hope Die, and a candle darkens as normal. Either way, the Moment cannot be attempted again.</li>
+          </ul>
+
+          <h4>Ways a Candle Can Go Out</h4>
+          <ul>
+            <li>A conflict roll fails (no 6s, and no hope die shows 5 or 6).</li>
+            <li>A Moment roll fails (hope is lost).</li>
+            <li>A Brink is embraced and the reroll fails (the Brink also burns and all hope dice are lost).</li>
+            <li>A player seizes narration rights from the GM, even after an otherwise successful roll.</li>
+            <li>The candle simply burns down on its own over time, regardless of how the players are doing. The story always advances toward its end, one way or another.</li>
+          </ul>
+
+          <h4>Ways to Reduce the Risk of a Candle Going Out</h4>
+          <ul>
+            <li>Burn your active Trait to reroll any dice that landed on 1, giving a failing roll another chance at a 6.</li>
+            <li>Embrace an active Brink to reroll the entire pool for another shot at success, though a failed embrace burns the Brink and darkens a candle anyway, so it's a real risk, not a safety net.</li>
+            <li>Earn and hold onto Hope Dice; they add extra dice that succeed on 5 or 6 and are never lost to a 1, meaningfully improving your odds on every roll they're used on.</li>
+          </ul>
+          <p style="font-size:11.5px;font-style:italic;">None of these prevent a candle from darkening on its own over time &mdash; there is no way to stop that. The rules are explicit that the end always comes.</p>
+        </details>
+
+        <div class="panel">
+          <h2>Randomize a Threat from Them</h2>
+          <div id="threat-panel"></div>
+        </div>
+      </div>
+
+      <div class="col-resizer" id="resizer-right" role="separator" aria-orientation="vertical"
+           aria-label="Resize right column" tabindex="0" aria-valuemin="260" aria-valuemax="600"></div>
+
+      <!-- RIGHT: Log -->
+      <aside id="right-col" class="col">
+        <div class="panel">
+          <h2>Log &amp; Outcomes <span class="info-icon" tabindex="0" role="img" aria-label="More info" title="A running record of everything that's happened, plus a highlighted Outcome entry after every roll spelling out exactly what happens next: who narrates, whether the scene ends, or that play simply continues.">i</span></h2>
+          <div id="log-list"></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <div class="footer-note">These things are true. The world is dark. And we are alive.</div>
+</div>
+
+<!-- The GM threat/inspiration bank lives in its own file (threats.js) purely for readability
+     and easy editing, kept separate from the app's own logic below. A plain script tag loads it,
+     which works fully offline since it's a script include rather than a network request. -->
+<script src="threats.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ======================= CONSTANTS =======================
+  // Naming every magic number/string once here so the rules below read as intent, not arithmetic.
+  const CANDLE_COUNT = 10;
+  const DIE_FACES = 6;              // a normal die succeeds by showing this face
+  const HOPE_DIE_SUCCESS_MIN = 5;   // a Hope Die succeeds on 5 or 6
+  const MAX_HISTORY_SNAPSHOTS = 200;
+  const SNUFF_ANIMATION_MS = 700;   // how long the blow-out smoke animation plays before the state actually changes
+  const MAX_PLAYER_FIELDS = 5;
+  const MIN_PLAYER_FIELDS = 1;
+  const DEFAULT_LEFT_COLUMN_PX = 300;
+  const DEFAULT_RIGHT_COLUMN_PX = 340;
+
+  // Flicker timing ranges (seconds) for the candle flame/smoke CSS animations. Re-rolled on
+  // every render so the row never looks synchronized or falls into a repeating pattern. The
+  // flame duration is intentionally quick (well under a second) so the motion reads as a real
+  // flicker rather than a slow sway.
+  const FLAME_DELAY_MAX_S = 1.6;
+  const FLAME_DURATION_MIN_S = 0.35;
+  const FLAME_DURATION_RANGE_S = 0.35;
+  const SMOKE_DELAY_MAX_S = 4.2;
+  const SMOKE_DURATION_MIN_S = 3.4;
+  const SMOKE_DURATION_RANGE_S = 1.8;
+  const RESIDUAL_SMOKE_MS = 5000; // how long the trailing smoke wisp lingers after a candle goes out
+
+  // Named states for a character's Trait/Moment/Brink cards, used instead of bare string
+  // literals so a typo becomes a crash-at-definition instead of a silent rules bug.
+  const TRAIT_STATUS = { ACTIVE:'active', LOCKED:'locked', BURNED:'burned' };
+  const MOMENT_STATUS = { INACTIVE:'inactive', ACTIVE:'active', LIVED:'lived', FAILED:'failed' };
+  const BRINK_STATUS = { LOCKED:'locked', ACTIVE:'active', BURNED:'burned' };
+
+  // ======================= STATE =======================
+  let state = null;
+  let historyStack = [];
+  let futureStack = [];
+
+  // Transient UI selections (not part of undo history)
+  let ui = {
+    activePlayerId: null,
+    dire: false,
+    isMoment: false,
+    sacrificePlayerId: '',
+    sacrificeRecipientId: '',
+    burnTraitChoice: 'virtue'
+  };
+
+  function uid(prefix){ return prefix + Math.random().toString(36).slice(2,9); }
+
+  function rollDice(n){
+    const out = [];
+    for(let i=0;i<n;i++){ out.push(1 + Math.floor(Math.random()*DIE_FACES)); }
+    return out;
+  }
+
+  function isSuccessfulRoll(normalDice, hopeDice){
+    return normalDice.includes(DIE_FACES) || hopeDice.some(d => d >= HOPE_DIE_SUCCESS_MIN);
+  }
+
+  function getPlayer(id){ return state.players.find(p=>p.id===id); }
+  function livingPlayers(){ return state.players.filter(p=>p.alive); }
+
+  function snapshot(){ return JSON.stringify(state); }
+  function pushHistory(){
+    historyStack.push(snapshot());
+    if(historyStack.length > MAX_HISTORY_SNAPSHOTS) historyStack.shift();
+    futureStack = [];
+  }
+
+  // Entries are appended (not prepended), so state.log reads oldest-to-newest — the same order
+  // a chat log reads top to bottom, with the newest entry always at the end of the array.
+  function addLog(actor, text){
+    state.log.push({ time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}), actor, text, isOutcome:false });
+  }
+
+  // A distinct kind of log entry that answers "what happens next?" (who narrates, whether the
+  // scene just ended, or that play simply continues), rendered with its own styling so it stands
+  // out from the blow-by-blow action log around it.
+  function addOutcome(text){
+    state.log.push({ time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}), actor:'Outcome', text, isOutcome:true });
+  }
+
+  // ======================= THREAT GENERATOR (GM inspiration only) =======================
+  // THREATS is defined in threats.js (loaded via a plain <script> tag above), kept separate
+  // from this file so the threat bank is easy to read and edit on its own.
+
+  let currentThreat = null;
+  let usedThreatIds = new Set();
+  let introducedThreatId = null;
+
+  // Every threat the GM has generated this game, in the order first shown, so Previous/Next can
+  // step back and forth through them without re-rolling. threatHistoryIndex always points at
+  // the entry currentThreat came from.
+  let threatHistory = [];
+  let threatHistoryIndex = -1;
+
+  // Records a freshly generated threat as the newest point in history, discarding any entries
+  // a previous "Previous Threat" click had stepped back past.
+  function recordThreatAsCurrent(threat){
+    currentThreat = threat;
+    introducedThreatId = null;
+    threatHistory = threatHistory.slice(0, threatHistoryIndex + 1);
+    threatHistory.push(threat);
+    threatHistoryIndex = threatHistory.length - 1;
+  }
+
+  // Which candle slot (if any) is mid-way through its one-shot "blown out" animation. This is
+  // purely a visual/transient thing, not part of the saved game state or undo history.
+  let snuffingSlot = null;
+
+  // Slots whose smoke should still be drawn: slot index -> pending timeout id. A slot is added
+  // the moment it goes dark and removed automatically once RESIDUAL_SMOKE_MS has passed, at
+  // which point the candle renders fully static with no smoke element at all.
+  let residualSmokeSlots = new Map();
+
+  function markCandleAsSmoking(slot){
+    const pendingTimeout = residualSmokeSlots.get(slot);
+    if(pendingTimeout) window.clearTimeout(pendingTimeout);
+    const timeoutId = window.setTimeout(()=>{
+      residualSmokeSlots.delete(slot);
+      render();
+    }, RESIDUAL_SMOKE_MS);
+    residualSmokeSlots.set(slot, timeoutId);
+  }
+
+  function clearAllResidualSmoke(){
+    residualSmokeSlots.forEach(timeoutId => window.clearTimeout(timeoutId));
+    residualSmokeSlots.clear();
+  }
+
+  function shuffleArray(arr){
+    const a = arr.slice();
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]] = [a[j],a[i]];
+    }
+    return a;
+  }
+
+  function pickOneThreat(exclude){
+    exclude = exclude || [];
+    let pool = THREATS.filter(t => !usedThreatIds.has(t.id) && exclude.indexOf(t.id)===-1);
+    if(pool.length < 1){
+      usedThreatIds.clear();
+      pool = THREATS.filter(t => exclude.indexOf(t.id)===-1);
+    }
+    const picked = shuffleArray(pool)[0];
+    if(picked) usedThreatIds.add(picked.id);
+    return picked;
+  }
+
+  function randomizeThreats(){
+    pushHistory();
+    recordThreatAsCurrent(pickOneThreat());
+    addLog(state.gmName, 'randomizes a threat from Them for inspiration.');
+    render();
+  }
+
+  function rerollThreat(){
+    if(!currentThreat) return;
+    pushHistory();
+    const replacement = pickOneThreat([currentThreat.id]);
+    if(replacement) recordThreatAsCurrent(replacement);
+    addLog(state.gmName, 'rerolls for a different threat option.');
+    render();
+  }
+
+  function introduceThreat(){
+    const t = currentThreat;
+    if(!t) return;
+    pushHistory();
+    introducedThreatId = t.id;
+    addLog(state.gmName, `introduces a threat inspired by ${t.inspiration}: "${t.title}" — ${t.prompt}`);
+    render();
+  }
+
+  function previousThreat(){
+    if(threatHistoryIndex <= 0) return;
+    threatHistoryIndex -= 1;
+    currentThreat = threatHistory[threatHistoryIndex];
+    render();
+  }
+
+  function nextThreat(){
+    if(threatHistoryIndex >= threatHistory.length - 1) return;
+    threatHistoryIndex += 1;
+    currentThreat = threatHistory[threatHistoryIndex];
+    render();
+  }
+
+  // ======================= GAME SETUP =======================
+  function createInitialState(playerNames, gmName){
+    return {
+      candlesTotal: CANDLE_COUNT,
+      litCandles: CANDLE_COUNT,
+      // Per-slot lit state so a specific clicked candle can be the one that visibly goes dark.
+      // Rule-driven darkening (failed rolls, etc.) doesn't care which slot, so it always takes
+      // the highest-index still-lit slot, which keeps litCandles/candles in sync with all the
+      // existing count-based logic below.
+      candles: Array(CANDLE_COUNT).fill(true),
+      scene: 1,
+      lastStand: false,
+      gameOver: false,
+      gmName: gmName || 'GM',
+      gmBrinkStatus: BRINK_STATUS.LOCKED,
+      gmBrinkUsed: false,
+      gmPool: 0,
+      playerPool: CANDLE_COUNT,
+      setAsideDice: 0,
+      // Only one of virtue/vice is ever 'active' at a time; burning the active one promotes
+      // the other from 'locked' to 'active' (see burnTrait).
+      players: playerNames.map((n,i)=>({
+        id: uid('p'),
+        name: n,
+        virtue: TRAIT_STATUS.ACTIVE,
+        vice: TRAIT_STATUS.LOCKED,
+        traitBurnedThisScene: false,
+        moment: MOMENT_STATUS.INACTIVE,
+        brink: BRINK_STATUS.LOCKED,
+        hopeDice: 0,
+        alive: true
+      })),
+      truthsRemaining: 0,
+      truthsSpoken: 0,
+      truthsPhaseActive: false,
+      lastRoll: null,
+      log: []
+    };
+  }
+
+  function startGame(){
+    const gmName = document.getElementById('gm-name-input').value.trim() || 'GM';
+    const inputs = document.querySelectorAll('.player-name-input');
+    const names = [];
+    inputs.forEach(inp=>{ const v = inp.value.trim(); if(v) names.push(v); });
+    if(names.length < 1){ alert('Add at least one player before starting.'); return; }
+
+    state = createInitialState(names, gmName);
+    historyStack = []; futureStack = [];
+    ui = { activePlayerId: state.players[0].id, dire:false, isMoment:false, sacrificePlayerId:'', sacrificeRecipientId:'', burnTraitChoice:'virtue' };
+    currentThreat = null; usedThreatIds = new Set(); introducedThreatId = null; snuffingSlot = null;
+    threatHistory = []; threatHistoryIndex = -1;
+    clearAllResidualSmoke();
+    addLog('System', 'All the candles are lit. Character creation is complete. Turn off the lights, record your parting messages, and begin.');
+
+    document.getElementById('setup-screen').classList.add('hidden');
+    document.getElementById('game-screen').classList.remove('hidden');
+    render();
+  }
+
+  function skipSetup(){
+    // Fill in any blank fields with sensible defaults, leaving anything already typed alone,
+    // then jump straight into the game.
+    const gmInput = document.getElementById('gm-name-input');
+    if(!gmInput.value.trim()) gmInput.value = 'GM';
+    const playerInputs = document.querySelectorAll('.player-name-input');
+    playerInputs.forEach((inp, i) => { if(!inp.value.trim()) inp.value = 'Player ' + (i+1); });
+    startGame();
+  }
+
+  function newGame(){
+    if(!confirm('Start a new game? This will discard the current session.')) return;
+    document.getElementById('game-screen').classList.add('hidden');
+    document.getElementById('setup-screen').classList.remove('hidden');
+    state = null;
+  }
+
+  // ======================= CORE RULES ENGINE =======================
+
+  // Picks which candle slot actually goes dark for this darkening event. A specific slot wins
+  // if it was given and is still lit (the player clicked that exact candle); otherwise this
+  // falls back to the highest-index still-lit slot, so the row always empties from the right,
+  // matching a rule-driven darken (a failed roll, etc.) that doesn't care which slot it is.
+  function resolveSlotToExtinguish(requestedSlot){
+    if(typeof requestedSlot === 'number' && state.candles[requestedSlot]) return requestedSlot;
+    for(let i = state.candles.length - 1; i >= 0; i--){
+      if(state.candles[i]) return i;
+    }
+    return -1;
+  }
+
+  // Extinguishes one candle and applies every knock-on rule (scene change, pool refill, Last
+  // Stand, game over) in a single step, returning a plain data summary instead of logging
+  // anything itself. Callers build their own single, comprehensive addOutcome message from this
+  // summary (see describeCandleConsequences) so everything that happens as a result of one event
+  // reads as one entry instead of being scattered across several separate log lines.
+  function extinguishCandleSlot(slotIndex){
+    if(state.gameOver || state.litCandles <= 0) return null;
+    const slotToExtinguish = resolveSlotToExtinguish(slotIndex);
+    if(slotToExtinguish === -1) return null;
+
+    state.candles[slotToExtinguish] = false;
+    state.litCandles = state.candles.filter(Boolean).length;
+    markCandleAsSmoking(slotToExtinguish);
+
+    const summary = { candlesRemaining: state.litCandles, gameEnded:false, sceneEnded:false, lastStandStarted:false };
+
+    if(state.litCandles <= 0){
+      endGame();
+      summary.gameEnded = true;
+      return summary;
+    }
+    if(state.lastStand){
+      // Once in the Last Stand, further candle darkening only happens via the final extinguishing.
+      return summary;
+    }
+
+    summary.previousScene = state.scene;
+    sceneChange();
+    summary.sceneEnded = true;
+    summary.newScene = state.scene;
+    summary.playerPool = state.playerPool;
+    summary.gmPool = state.gmPool;
+    summary.truthsRemaining = state.truthsRemaining;
+
+    if(state.litCandles === 1){
+      state.lastStand = true;
+      summary.lastStandStarted = true;
+    }
+    return summary;
+  }
+
+  // Turns an extinguishCandleSlot() summary into the human-readable back half of an outcome
+  // message: how many candles are left, the scene/pool refill if one just happened, Last Stand
+  // starting, or the game ending outright.
+  function describeCandleConsequences(summary){
+    if(!summary) return '';
+    if(summary.gameEnded){
+      return 'The last candle goes dark. "These things are true. The world is dark." Play the final recording.';
+    }
+    let text = `${summary.candlesRemaining} candle${summary.candlesRemaining===1?'':'s'} remain.`;
+    if(summary.sceneEnded){
+      text += ` ${state.gmName} narrates the end of Scene ${summary.previousScene}. Scene ${summary.newScene} begins now` +
+        ` — player pool refills to ${summary.playerPool}, GM pool is now ${summary.gmPool}, establish ${summary.truthsRemaining}` +
+        ` truth${summary.truthsRemaining===1?'':'s'}.`;
+    }
+    if(summary.lastStandStarted){
+      text += ' ⚠ THE LAST STAND begins: failed conflicts now kill instead of darkening a candle.';
+    }
+    return text;
+  }
+
+  function sceneChange(){
+    const available = state.playerPool + state.setAsideDice;
+    const newPool = Math.min(state.litCandles, available);
+    state.gmPool += Math.max(0, available - newPool);
+    state.playerPool = newPool;
+    state.setAsideDice = 0;
+    state.scene += 1;
+    state.players.forEach(p=> p.traitBurnedThisScene = false);
+    state.truthsRemaining = state.litCandles;
+    state.truthsSpoken = 0;
+    state.truthsPhaseActive = true;
+  }
+
+  function endGame(){
+    state.gameOver = true;
+    state.truthsPhaseActive = false;
+  }
+
+  function checkAllDeadDuringLastStand(){
+    if(state.lastStand && !state.gameOver && livingPlayers().length === 0){
+      const consequences = extinguishCandleSlot();
+      addOutcome(`Every survivor has died. ${describeCandleConsequences(consequences)}`);
+    }
+  }
+
+  // ---------- Conflict roll ----------
+  function rollConflict(){
+    if(!ui.activePlayerId) { alert('Choose an active player first.'); return; }
+    const player = getPlayer(ui.activePlayerId);
+    if(!player.alive){ alert(player.name + ' has died and cannot roll.'); return; }
+    if(state.lastRoll && !state.lastRoll.resolved){ alert('Resolve the current roll before starting a new one.'); return; }
+
+    pushHistory();
+
+    // Auto-fail: Last Stand, empty pool
+    if(state.lastStand && state.playerPool <= 0 && player.hopeDice <= 0){
+      addLog(player.name, `attempts a conflict with no dice left in the pool. Automatic failure.`);
+      state.lastRoll = { playerId: player.id, normalDice:[], hopeDice:[], dire:ui.dire, isMoment:ui.isMoment,
+        resolved:false, poolSizeAtRoll:0, currentSuccess:false, gmRolled:false, gmDice:[], seized:false, auto:true };
+      finalizeConflict();
+      render();
+      return;
+    }
+
+    const poolSize = state.playerPool;
+    const normalDice = rollDice(poolSize);
+    const hopeDice = rollDice(player.hopeDice);
+    const success = isSuccessfulRoll(normalDice, hopeDice);
+
+    state.lastRoll = {
+      playerId: player.id, normalDice, hopeDice, dire: ui.dire, isMoment: ui.isMoment,
+      resolved:false, poolSizeAtRoll: poolSize, currentSuccess: success,
+      gmRolled:false, gmDice:[], seized:false, auto:false
+    };
+
+    addLog(player.name, `rolls a conflict${ui.isMoment?' (living their Moment)':''}${ui.dire?' — DIRE':''}: [${normalDice.join(', ')}]` +
+      (hopeDice.length? ` + Hope die [${hopeDice.join(', ')}]` : '') + ` → currently ${success? 'SUCCESS':'FAILURE'}`);
+
+    render();
+  }
+
+  function burnTrait(traitType){
+    const lr = state.lastRoll;
+    if(!lr || lr.resolved) return;
+    const player = getPlayer(lr.playerId);
+    if(player[traitType] !== TRAIT_STATUS.ACTIVE || player.traitBurnedThisScene) return;
+
+    pushHistory();
+    lr.normalDice = lr.normalDice.map(d => d===1 ? rollDice(1)[0] : d);
+    lr.hopeDice = lr.hopeDice.map(d => d===1 ? rollDice(1)[0] : d);
+    player[traitType] = TRAIT_STATUS.BURNED;
+    player.traitBurnedThisScene = true;
+    // Only one of Virtue/Vice is ever active. Burning the active one advances the stack:
+    // the other trait becomes active next (if it hasn't already been burned).
+    const otherTrait = traitType === 'virtue' ? 'vice' : 'virtue';
+    if(player[otherTrait] === TRAIT_STATUS.LOCKED) player[otherTrait] = TRAIT_STATUS.ACTIVE;
+    lr.currentSuccess = isSuccessfulRoll(lr.normalDice, lr.hopeDice);
+
+    addLog(player.name, `burns their ${traitType==='virtue'?'Virtue':'Vice'} Trait, rerolling 1s: [${lr.normalDice.join(', ')}]` +
+      (lr.hopeDice.length? ` + Hope [${lr.hopeDice.join(', ')}]` : '') + ` → now ${lr.currentSuccess? 'SUCCESS':'FAILURE'}`);
+    render();
+  }
+
+  function embraceBrink(){
+    const lr = state.lastRoll;
+    if(!lr || lr.resolved) return;
+    const player = getPlayer(lr.playerId);
+    if(player.brink !== BRINK_STATUS.ACTIVE) return;
+
+    pushHistory();
+    lr.normalDice = rollDice(lr.poolSizeAtRoll);
+    lr.hopeDice = rollDice(player.hopeDice);
+    lr.currentSuccess = isSuccessfulRoll(lr.normalDice, lr.hopeDice);
+
+    if(lr.currentSuccess){
+      addLog(player.name, `embraces their Brink, rerolling everything: [${lr.normalDice.join(', ')}]` +
+        (lr.hopeDice.length? ` + Hope [${lr.hopeDice.join(', ')}]` : '') + ` → SUCCESS. The Brink is retained.`);
+    } else {
+      player.brink = BRINK_STATUS.BURNED;
+      player.hopeDice = 0;
+      addLog(player.name, `embraces their Brink, rerolling everything: [${lr.normalDice.join(', ')}]` +
+        (lr.hopeDice.length? ` + Hope [${lr.hopeDice.join(', ')}]` : '') + ` → FAILURE. Consumed by the Brink — it burns, and all hope dice are lost.`);
+    }
+    render();
+  }
+
+  function confirmOutcome(){
+    const lr = state.lastRoll;
+    if(!lr || lr.resolved) return;
+    pushHistory();
+    finalizeConflict();
+    render();
+  }
+
+  function finalizeConflict(){
+    const lr = state.lastRoll;
+    const player = getPlayer(lr.playerId);
+    lr.resolved = true;
+
+    if(lr.currentSuccess){
+      const onesLost = lr.normalDice.filter(d=>d===1).length;
+      state.playerPool = Math.max(0, state.playerPool - onesLost);
+      state.setAsideDice += onesLost;
+      addLog(player.name, `succeeds the conflict. ${onesLost? onesLost + ' die/dice lost to 1s.' : 'No dice lost.'} Player pool: ${state.playerPool}.`);
+
+      if(lr.isMoment){
+        player.hopeDice += 1;
+        player.moment = MOMENT_STATUS.LIVED;
+        addLog(player.name, `lives their Moment! Hope is inspired — they gain a Hope Die (now have ${player.hopeDice}).`);
+      }
+      if(state.gmPool <= 0){
+        lr.narrator = player.name;
+        addOutcome(`${state.gmName} has no dice to contest it. ${player.name} gains narration rights.`);
+      } else {
+        addOutcome(`Waiting on ${state.gmName} to roll narration dice.`);
+      }
+    } else {
+      if(lr.isMoment){
+        player.moment = MOMENT_STATUS.FAILED;
+        addLog(player.name, `fails to live their Moment. Hope is lost.`);
+      }
+      if(state.lastStand){
+        player.alive = false;
+        addLog(player.name, `fails the conflict during THE LAST STAND and dies.`);
+        addOutcome('Play continues.');
+      } else {
+        const consequences = extinguishCandleSlot();
+        const failureLead = lr.dire
+          ? `${state.gmName} narrates the failure (unless a character sacrifices themselves) — a candle is blown out for ${player.name}'s failed roll.`
+          : `${state.gmName} narrates the failure — a candle is blown out for ${player.name}'s failed roll.`;
+        addOutcome(`${failureLead} ${describeCandleConsequences(consequences)}`);
+      }
+    }
+    checkAllDeadDuringLastStand();
+  }
+
+  function rollGM(){
+    const lr = state.lastRoll;
+    if(!lr || !lr.resolved || !lr.currentSuccess || lr.gmRolled || state.gmPool<=0) return;
+    pushHistory();
+    lr.gmDice = rollDice(state.gmPool);
+    lr.gmRolled = true;
+    recomputeNarration();
+    render();
+  }
+
+  // leadIn optionally prefixes the outcome with whatever just caused this narration roll to
+  // happen (e.g. embracing Their Brink), so that event and its result read as one entry.
+  function recomputeNarration(leadIn){
+    const lr = state.lastRoll;
+    const player = getPlayer(lr.playerId);
+    const playerSixes = lr.normalDice.filter(d=>d===6).length + lr.hopeDice.filter(d=>d===6).length;
+    const gmSixes = lr.gmDice.filter(d=>d===6).length;
+    const gmWins = gmSixes >= playerSixes;
+    lr.narrator = gmWins ? (state.gmName + ' (GM)') : player.name;
+    const rollSummary = `${state.gmName} rolls for narration: [${lr.gmDice.join(', ')}] (${gmSixes} sixes) vs ${player.name}'s ${playerSixes} sixes` +
+      `${gmSixes===playerSixes? ' (tie favors the GM)':''}`;
+    const winner = gmWins ? `${state.gmName} gains narration rights.` : `${player.name} gains narration rights.`;
+    addOutcome(`${leadIn ? leadIn + ' ' : ''}${rollSummary} → ${winner}`);
+  }
+
+  function embraceGMBrink(){
+    const lr = state.lastRoll;
+    if(!lr || !lr.gmRolled || state.gmBrinkStatus!==BRINK_STATUS.ACTIVE || state.gmBrinkUsed) return;
+    pushHistory();
+    lr.gmDice = rollDice(state.gmPool);
+    state.gmBrinkUsed = true;
+    state.gmBrinkStatus = BRINK_STATUS.BURNED;
+    recomputeNarration(`${state.gmName} embraces Their Brink, rerolling the GM pool entirely — Their Brink is now spent, revealing a piece of Their identity.`);
+    render();
+  }
+
+  function seizeNarration(){
+    const lr = state.lastRoll;
+    if(!lr || !lr.resolved || lr.seized) return;
+    const player = getPlayer(lr.playerId);
+    if(!confirm(player.name + ' seizes narration rights by darkening a candle. Continue?')) return;
+    pushHistory();
+    lr.seized = true;
+    lr.narrator = player.name + ' (seized)';
+    const consequences = extinguishCandleSlot();
+    addOutcome(`${player.name} seizes narration rights, blowing out a candle to do it. ${describeCandleConsequences(consequences)}`);
+    render();
+  }
+
+  // ---------- Dire conflict sacrifice ----------
+  function sacrifice(){
+    const dyingId = ui.sacrificePlayerId;
+    if(!dyingId){ alert('Choose which character sacrifices themselves.'); return; }
+    const dying = getPlayer(dyingId);
+    if(!dying.alive){ alert(dying.name + ' has already died.'); return; }
+    pushHistory();
+    dying.alive = false;
+    let msg = `${dying.name} chooses to die in the failed Dire Conflict, winning narration rights over their own death.`;
+    if(dying.hopeDice > 0 && ui.sacrificeRecipientId){
+      const recipient = getPlayer(ui.sacrificeRecipientId);
+      if(recipient && recipient.id !== dying.id){
+        recipient.hopeDice += dying.hopeDice;
+        msg += ` Martyrdom: their Hope Die passes to ${recipient.name}.`;
+        dying.hopeDice = 0;
+      }
+    }
+    addLog(dying.name, msg);
+    checkAllDeadDuringLastStand();
+    ui.sacrificePlayerId=''; ui.sacrificeRecipientId='';
+    render();
+  }
+
+  // ---------- Manual / misc actions ----------
+  function manualDarken(){
+    const reason = prompt('Reason the candle darkens (e.g. "burned down naturally"):', 'burned down naturally');
+    if(reason === null) return;
+    pushHistory();
+    const consequences = extinguishCandleSlot();
+    addOutcome(`A candle darkens (${reason || 'manual'}). ${describeCandleConsequences(consequences)}`);
+    render();
+  }
+
+  function blowOutCandle(slot){
+    if(!state || state.gameOver) return;
+    if(!state.candles[slot]) return; // already unlit, nothing to do
+    if(snuffingSlot !== null) return; // an animation is already playing
+    if(!confirm('Would you like to blow out this candle?')) return;
+
+    // Play the transitional smoke-puff/snuff animation first, purely visual, then apply the
+    // real state change and re-render into the permanent unlit look.
+    snuffingSlot = slot;
+    render();
+    window.setTimeout(()=>{
+      snuffingSlot = null;
+      pushHistory();
+      const consequences = extinguishCandleSlot(slot);
+      addOutcome(`A candle is blown out. ${describeCandleConsequences(consequences)}`);
+      render();
+    }, SNUFF_ANIMATION_MS);
+  }
+
+  function extinguishFinal(){
+    if(!state.lastStand || state.gameOver) return;
+    if(!confirm('Extinguish the final candle and end the game?')) return;
+    pushHistory();
+    state.candles.forEach((isLit, slot) => { if(isLit) markCandleAsSmoking(slot); });
+    state.candles = state.candles.map(()=>false);
+    state.litCandles = 0;
+    endGame();
+    addOutcome(`The final candle is extinguished. ${describeCandleConsequences({ gameEnded:true })}`);
+    render();
+  }
+
+  function truthSpoken(){
+    if(!state.truthsPhaseActive) return;
+    const maxIndividual = Math.max(0, state.truthsRemaining - 1);
+    if(state.truthsSpoken >= maxIndividual) return;
+    pushHistory();
+    state.truthsSpoken += 1;
+    addLog('Table', `A truth is spoken (${state.truthsSpoken}/${maxIndividual}).`);
+    render();
+  }
+
+  function speakTogether(){
+    if(!state.truthsPhaseActive) return;
+    const maxIndividual = Math.max(0, state.truthsRemaining - 1);
+    if(state.truthsSpoken < maxIndividual) return;
+    pushHistory();
+    state.truthsPhaseActive = false;
+    addLog('All players', '"And we are alive." The Establishing Truths phase ends.');
+    render();
+  }
+
+  function swapActiveTrait(playerId){
+    const p = getPlayer(playerId);
+    // Only allowed while neither Trait has been burned yet — this represents choosing which
+    // card sits on top of the stack before either is used.
+    if(p.virtue === TRAIT_STATUS.BURNED || p.vice === TRAIT_STATUS.BURNED) return;
+    pushHistory();
+    const wasActive = p.virtue === TRAIT_STATUS.ACTIVE ? 'virtue' : 'vice';
+    const wasLocked = wasActive === 'virtue' ? 'vice' : 'virtue';
+    p[wasActive] = TRAIT_STATUS.LOCKED;
+    p[wasLocked] = TRAIT_STATUS.ACTIVE;
+    addLog(p.name, `swaps their active Trait to ${wasLocked==='virtue'?'Virtue':'Vice'}.`);
+    render();
+  }
+
+  function activateMoment(playerId){
+    const p = getPlayer(playerId);
+    if(p.moment !== MOMENT_STATUS.INACTIVE) return;
+    pushHistory();
+    p.moment = MOMENT_STATUS.ACTIVE;
+    addLog(p.name, "'s Moment becomes active.");
+    render();
+  }
+
+  function activateBrink(playerId){
+    const p = getPlayer(playerId);
+    if(p.brink !== BRINK_STATUS.LOCKED) return;
+    pushHistory();
+    p.brink = BRINK_STATUS.ACTIVE;
+    addLog(p.name, "'s Brink becomes active — everything else has burned away.");
+    render();
+  }
+
+  function activateGMBrink(){
+    if(state.gmBrinkStatus !== BRINK_STATUS.LOCKED) return;
+    pushHistory();
+    state.gmBrinkStatus = BRINK_STATUS.ACTIVE;
+    addLog(state.gmName, "'s Brink (Them) becomes active.");
+    render();
+  }
+
+  function markDeceased(playerId){
+    const p = getPlayer(playerId);
+    if(!p.alive) return;
+    if(!confirm('Mark ' + p.name + ' as deceased?')) return;
+    pushHistory();
+    p.alive = false;
+    addLog('System', p.name + ' has died.');
+    checkAllDeadDuringLastStand();
+    render();
+  }
+
+  function renamePlayer(playerId, rawNewName, inputEl){
+    const p = getPlayer(playerId);
+    if(!p) return;
+    const trimmed = (rawNewName || '').trim();
+    if(!trimmed || trimmed === p.name){
+      // Blank or unchanged: just snap the field back to the current name, no log entry needed.
+      if(inputEl) inputEl.textContent = p.name;
+      return;
+    }
+    pushHistory();
+    const oldName = p.name;
+    p.name = trimmed;
+    addLog('System', `renames "${oldName}" to "${trimmed}".`);
+    render();
+  }
+
+  // ======================= UNDO / REDO =======================
+  function undo(){
+    if(historyStack.length===0) return;
+    futureStack.push(snapshot());
+    state = JSON.parse(historyStack.pop());
+    if(ui.activePlayerId && !getPlayer(ui.activePlayerId)) ui.activePlayerId = state.players[0] ? state.players[0].id : null;
+    // The "introduced" highlight is a transient UI marker, not part of game state history;
+    // clear it on undo/redo so it can't show a threat as introduced when the log entry for it is gone.
+    introducedThreatId = null;
+    snuffingSlot = null;
+    clearAllResidualSmoke();
+    render();
+  }
+  function redo(){
+    if(futureStack.length===0) return;
+    historyStack.push(snapshot());
+    state = JSON.parse(futureStack.pop());
+    introducedThreatId = null;
+    snuffingSlot = null;
+    clearAllResidualSmoke();
+    render();
+  }
+
+  // ======================= RENDER =======================
+  function diceHtml(dice, cls){
+    if(!dice || dice.length===0) return '<span class="empty-note">no dice</span>';
+    return dice.map(d=>{
+      let extra = '';
+      if(cls === 'hopeDie'){ extra = d>=5 ? ' hit' : ''; }
+      else if(d===6) extra = ' six';
+      else if(d===1) extra = ' one';
+      return `<div class="die ${cls||''}${extra}">${d}</div>`;
+    }).join('');
+  }
+
+  // Candle geometry (no wax drips, flat muted color, thin cross-hatch shading strokes) meant to
+  // read as a simple hand-drawn object, matching a Don't Starve-style aesthetic rather than the
+  // glossier, dripping-wax look this used to have. The flame paths are direct children of the
+  // <svg>, not wrapped in a <g>, so the flicker animation (declared in CSS on .flame-outer and
+  // .flame-inner directly) anchors to a leaf shape rather than a group container.
+  function litCandleSvg(i, timingStyle){
+    return `<svg class="candle-icon" viewBox="0 0 64 110" aria-hidden="true" style="${timingStyle}">
+      <circle class="candle-glow" cx="32" cy="30" r="20"></circle>
+      <ellipse class="candle-holder" cx="32" cy="101" rx="17" ry="5"></ellipse>
+      <rect class="candle-body" x="18" y="40" width="28" height="62" rx="3"></rect>
+      <path class="candle-hatch" d="M22,50 L22,92"></path>
+      <path class="candle-hatch" d="M27,48 L27,96"></path>
+      <path class="candle-hatch" d="M42,52 L42,90"></path>
+      <rect class="candle-wick" x="30" y="32" width="4" height="10" rx="1.5"></rect>
+      <path class="flame-outer" d="M32,8 L27,18 L24,26 L26,33 C27,36 30,38 32,38 C34,38 37,36 38,33 L40,26 L37,18 Z"></path>
+      <path class="flame-inner" d="M32,16 L29,22 L28,27 C28,30 30,32 32,32 C34,32 36,30 36,27 L35,22 Z"></path>
+    </svg>`;
+  }
+
+  // showSmoke controls whether the trailing smoke-wisp is drawn at all. It is only true for the
+  // few seconds right after a candle goes out (see markCandleAsSmoking); after that window closes,
+  // the candle renders with no smoke element and no animation, permanently static.
+  function unlitCandleSvg(i, timingStyle, showSmoke){
+    const smokeWisp = showSmoke
+      ? `<path class="smoke-wisp" d="M32,36 C28,30 36,26 32,20 C28,14 36,10 33,4"></path>`
+      : '';
+    return `<svg class="candle-icon" viewBox="0 0 64 110" aria-hidden="true" style="${timingStyle}">
+      ${smokeWisp}
+      <ellipse class="candle-holder" cx="32" cy="101" rx="17" ry="5"></ellipse>
+      <rect class="candle-body-unlit" x="18" y="40" width="28" height="62" rx="3"></rect>
+      <path class="candle-hatch" d="M22,50 L22,92"></path>
+      <path class="candle-hatch" d="M27,48 L27,96"></path>
+      <path class="candle-wick-burnt" d="M31,34 C33,38 29,40 31,42"></path>
+    </svg>`;
+  }
+
+  function snuffingCandleSvg(i){
+    return `<svg class="candle-icon" viewBox="0 0 64 110" aria-hidden="true">
+      <path class="puff-smoke" d="M32,14 C25,6 39,-1 32,-9 C26,-16 39,-22 33,-28"></path>
+      <circle class="candle-glow snuff-glow" cx="32" cy="30" r="20"></circle>
+      <ellipse class="candle-holder" cx="32" cy="101" rx="17" ry="5"></ellipse>
+      <rect class="candle-body" x="18" y="40" width="28" height="62" rx="3"></rect>
+      <path class="candle-hatch" d="M22,50 L22,92"></path>
+      <path class="candle-hatch" d="M27,48 L27,96"></path>
+      <path class="candle-hatch" d="M42,52 L42,90"></path>
+      <rect class="candle-wick" x="30" y="32" width="4" height="10" rx="1.5"></rect>
+      <path class="flame-outer snuffing" d="M32,8 L27,18 L24,26 L26,33 C27,36 30,38 32,38 C34,38 37,36 38,33 L40,26 L37,18 Z"></path>
+      <path class="flame-inner snuffing" d="M32,16 L29,22 L28,27 C28,30 30,32 32,32 C34,32 36,30 36,27 L35,22 Z"></path>
+    </svg>`;
+  }
+
+  // Truly random (not just index-derived) flicker timing per candle per render, so the row
+  // never looks synchronized and never settles into a repeating pattern either.
+  function randomTimingStyle(kind){
+    if(kind === 'flame'){
+      const delay = (Math.random() * FLAME_DELAY_MAX_S).toFixed(2);
+      const dur = (FLAME_DURATION_MIN_S + Math.random() * FLAME_DURATION_RANGE_S).toFixed(2);
+      return `--fd:${delay}s;--fdur:${dur}s;`;
+    }
+    const delay = (Math.random() * SMOKE_DELAY_MAX_S).toFixed(2);
+    const dur = (SMOKE_DURATION_MIN_S + Math.random() * SMOKE_DURATION_RANGE_S).toFixed(2);
+    return `--sd:${delay}s;--sdur:${dur}s;`;
+  }
+
+  function renderCandles(){
+    let html = '';
+    for(let i=0;i<state.candlesTotal;i++){
+      const lit = !!state.candles[i];
+      if(i === snuffingSlot){
+        html += `<div class="candle-slot unlit-slot" aria-hidden="true">${snuffingCandleSvg(i)}</div>`;
+      } else if(lit){
+        html += `<button type="button" class="candle-slot lit-slot" data-slot="${i}" aria-label="Blow out this candle">${litCandleSvg(i, randomTimingStyle('flame'))}</button>`;
+      } else {
+        const showSmoke = residualSmokeSlots.has(i);
+        html += `<div class="candle-slot unlit-slot" aria-hidden="true">${unlitCandleSvg(i, randomTimingStyle('smoke'), showSmoke)}</div>`;
+      }
+    }
+    const candleRow = document.getElementById('candle-row');
+    candleRow.innerHTML = html;
+    candleRow.setAttribute('aria-label', `${state.litCandles} of ${state.candlesTotal} candles still lit. Click a lit candle to blow it out.`);
+    candleRow.querySelectorAll('.candle-slot.lit-slot').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        const slot = parseInt(e.currentTarget.dataset.slot, 10);
+        blowOutCandle(slot);
+      });
+    });
+
+    const banner = document.getElementById('status-banner');
+    if(state.gameOver){
+      banner.className='gameover';
+      banner.innerHTML = `<span class="status-scene">The End</span><span class="status-sub">The world is dark. Play the final recording.</span>`;
+    } else if(state.lastStand){
+      banner.className='laststand';
+      banner.innerHTML = `<span class="status-scene">Scene ${state.scene}</span><span class="status-sub">⚠ THE LAST STAND — failed conflicts kill, not darken</span>`;
+    } else {
+      banner.className='';
+      banner.innerHTML = `<span class="status-scene">Scene ${state.scene}</span>`;
+    }
+  }
+
+  function traitChipClass(status){
+    if(status===TRAIT_STATUS.ACTIVE) return 'active';
+    if(status===TRAIT_STATUS.BURNED) return 'burned';
+    return 'locked';
+  }
+
+  function momentChipClass(moment){
+    if(moment===MOMENT_STATUS.LIVED) return 'lived';
+    if(moment===MOMENT_STATUS.FAILED) return 'burned';
+    if(moment===MOMENT_STATUS.ACTIVE) return 'active';
+    return '';
+  }
+
+  function brinkChipClass(brink){
+    if(brink===BRINK_STATUS.ACTIVE) return 'active';
+    if(brink===BRINK_STATUS.BURNED) return 'burned';
+    return '';
+  }
+
+  function renderPlayers(){
+    let html = '';
+    state.players.forEach(p=>{
+      const brinkEligible = p.brink===BRINK_STATUS.LOCKED && p.virtue===TRAIT_STATUS.BURNED && p.vice===TRAIT_STATUS.BURNED &&
+        (p.moment===MOMENT_STATUS.LIVED || p.moment===MOMENT_STATUS.FAILED);
+      const canSwapTrait = p.virtue!==TRAIT_STATUS.BURNED && p.vice!==TRAIT_STATUS.BURNED;
+      html += `<div class="player-card ${p.alive?'':'dead'}">
+        <div class="pname">
+          <span class="pname-edit-wrap">${p.alive?'':'<span aria-hidden="true">☠ </span>'}<span class="player-name-edit" contenteditable="true" spellcheck="false" role="textbox" data-player-id="${p.id}" aria-label="Edit this survivor's name" title="Click to rename">${escapeHtml(p.name)}</span></span>
+          ${p.hopeDice>0?`<span class="chip hope">Hope ×${p.hopeDice}</span>`:''}
+        </div>
+        <div class="chip-row">
+          <span class="chip ${traitChipClass(p.virtue)}">Virtue: ${p.virtue}</span>
+          <span class="chip ${traitChipClass(p.vice)}">Vice: ${p.vice}</span>
+          <span class="chip ${momentChipClass(p.moment)}">Moment: ${p.moment}</span>
+          <span class="chip ${brinkChipClass(p.brink)}">Brink: ${p.brink}</span>
+        </div>
+        <p style="font-size:11px;color:var(--dim);margin:6px 0 0;">Only 1 Card is active, burning it activates the next card.</p>
+        <div class="player-actions">
+          ${canSwapTrait ? `<button class="mini-btn" onclick="TC.swapActiveTrait('${p.id}')" title="Swap which Trait is on top of the stack">⇄ Swap Active Trait</button>` : ''}
+          ${p.moment===MOMENT_STATUS.INACTIVE ? `<button class="mini-btn" onclick="TC.activateMoment('${p.id}')">Activate Moment ${infoIcon("Makes this character's Moment card available to be lived. Once active, the player can choose to live the Moment the next time they roll a conflict for this character.")}</button>` : ''}
+          ${brinkEligible ? `<button class="mini-btn" onclick="TC.activateBrink('${p.id}')">Activate Brink</button>` : ''}
+          ${p.alive ? `<button class="mini-btn danger" onclick="TC.markDeceased('${p.id}')">☠ Mark Deceased</button>` : ''}
+        </div>
+      </div>`;
+    });
+    document.getElementById('players-list').innerHTML = html || '<span class="empty-note">No players.</span>';
+  }
+
+  function renderGM(){
+    document.getElementById('gm-panel').innerHTML = `
+      <div class="chip-row">
+        <span class="chip active">${escapeHtml(state.gmName)}</span>
+        <span class="chip">GM Pool: ${state.gmPool}</span>
+        <span class="chip ${brinkChipClass(state.gmBrinkStatus)}">Their Brink: ${state.gmBrinkStatus}</span>
+      </div>
+      <div class="player-actions">
+        ${state.gmBrinkStatus===BRINK_STATUS.LOCKED ? `<button class="mini-btn" onclick="TC.activateGMBrink()">Activate Their Brink</button>` : ''}
+      </div>
+      <p style="font-size:11.5px;color:var(--dim);margin-top:8px;">Their Brink may only ever define a strength or identity for Them &mdash; never a weakness. The only weakness They have is light.</p>
+    `;
+  }
+
+  function renderTruths(){
+    const box = document.getElementById('truths-panel');
+    if(!state.truthsPhaseActive){
+      box.innerHTML = `<p class="empty-note">No Establishing Truths phase active right now. This starts automatically whenever a candle darkens.</p>`;
+      return;
+    }
+    const maxIndividual = Math.max(0, state.truthsRemaining - 1);
+    box.innerHTML = `
+      <div class="truths-box">
+        <div class="ritual">GM: "These things are true. The world is dark."</div>
+        <div>Truths to speak (going clockwise): <b>${state.truthsRemaining}</b> total, ending in the collective truth.</div>
+        <div style="margin:8px 0;">Individual truths spoken: ${state.truthsSpoken} / ${maxIndividual}</div>
+        <div class="btn-grid">
+          <button ${state.truthsSpoken>=maxIndividual?'disabled':''} onclick="TC.truthSpoken()">Speak a Truth (+1)</button>
+          <button class="primary" ${state.truthsSpoken<maxIndividual?'disabled':''} onclick="TC.speakTogether()">All together: "And we are alive."</button>
+        </div>
+        <p style="font-size:11.5px;color:var(--dim);margin-top:8px;">Only the GM may establish truths about Them, the dark, or the sunless sky.</p>
+      </div>`;
+  }
+
+  function renderRollControls(){
+    const lr = state.lastRoll;
+    const locked = lr && !lr.resolved;
+    const living = livingPlayers();
+    // If the previously-selected active player has died (or no longer exists), fall back to the first living player.
+    if(!living.some(p=>p.id===ui.activePlayerId)){
+      ui.activePlayerId = living.length ? living[0].id : null;
+    }
+    const activePlayer = ui.activePlayerId ? getPlayer(ui.activePlayerId) : null;
+    const momentAvailable = !!(activePlayer && activePlayer.moment === MOMENT_STATUS.ACTIVE);
+    if(!momentAvailable) ui.isMoment = false;
+    let opts = living.map(p=>`<option value="${p.id}" ${ui.activePlayerId===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
+    document.getElementById('roll-controls').innerHTML = `
+      <div class="field-row">
+        <select id="active-player-select" aria-label="Active player rolling the conflict" ${locked?'disabled':''}>${opts || '<option>No living players</option>'}</select>
+        <label class="checkbox-label"><input type="checkbox" id="dire-check" ${ui.dire?'checked':''} ${locked?'disabled':''}> Dire Conflict ${infoIcon("A conflict the GM flags in advance as carrying lethal or ruinous stakes if it fails. On a failure, any player may choose to have their character die heroically instead, taking over narration of the failure and the death (Martyrdom).")}</label>
+        <label class="checkbox-label" title="${momentAvailable?'':'Only available once this player\'s Moment card is active'}"><input type="checkbox" id="moment-check" ${ui.isMoment?'checked':''} ${locked || !momentAvailable?'disabled':''}> Living a Moment ${infoIcon("Once a character's Moment card is active, the player may declare they're living it, then burn the Moment card before rolling. Success inspires hope: gain a Hope Die and narrate how it goes. Failure loses hope: no Hope Die, and a candle darkens as normal. Either way, the Moment can't be attempted again.")}</label>
+      </div>
+      <div class="pool-stats">
+        <div>Player Pool: <b>${state.playerPool}</b></div>
+        <div>GM Pool: <b>${state.gmPool}</b></div>
+        <div>Set aside this scene: <b>${state.setAsideDice}</b></div>
+      </div>
+      <button class="primary" id="roll-conflict-btn" ${locked || living.length===0 ? 'disabled':''}>🎲 Roll Conflict</button>
+    `;
+    document.getElementById('active-player-select').addEventListener('change', e=>{ ui.activePlayerId = e.target.value; render(); });
+    document.getElementById('dire-check').addEventListener('change', e=>{ ui.dire = e.target.checked; });
+    document.getElementById('moment-check').addEventListener('change', e=>{ ui.isMoment = e.target.checked; });
+    document.getElementById('roll-conflict-btn').addEventListener('click', rollConflict);
+  }
+
+  function renderRollDisplay(){
+    const lr = state.lastRoll;
+    const el = document.getElementById('roll-display');
+    const actionsEl = document.getElementById('post-roll-actions');
+    if(!lr){
+      el.innerHTML = '<span class="empty-note">No roll yet. Choose a player and roll a conflict.</span>';
+      actionsEl.innerHTML = '';
+      return;
+    }
+    const player = getPlayer(lr.playerId);
+    el.innerHTML = `
+      <div style="margin-bottom:6px;color:var(--dim);font-size:12.5px;">${escapeHtml(player.name)}'s roll${lr.dire?' &middot; DIRE':''}${lr.isMoment?' &middot; MOMENT':''}</div>
+      <div class="dice-row">${diceHtml(lr.normalDice,'')}${diceHtml(lr.hopeDice,'hopeDie')}</div>
+      <span class="outcome-badge ${lr.currentSuccess?'success':'failure'}">${lr.currentSuccess?'SUCCESS':'FAILURE'}</span>
+      ${lr.gmRolled ? `<div style="margin-top:10px;color:var(--dim);font-size:12.5px;">${escapeHtml(state.gmName)}'s narration roll</div><div class="dice-row">${diceHtml(lr.gmDice,'gm')}</div>` : ''}
+      ${lr.narrator ? `<div style="margin-top:6px;">Narration rights: <b style="color:var(--flame2)">${escapeHtml(lr.narrator)}</b></div>` : ''}
+    `;
+
+    let actions = '';
+    if(!lr.resolved){
+      const traitAvailable = ['virtue','vice'].filter(t => player[t]===TRAIT_STATUS.ACTIVE && !player.traitBurnedThisScene && (lr.normalDice.includes(1)||lr.hopeDice.includes(1)));
+      if(traitAvailable.length){
+        actions += traitAvailable.map(t=>`<button onclick="TC.burnTrait('${t}')">Burn ${t==='virtue'?'Virtue':'Vice'} (reroll 1s)</button>`).join('');
+      }
+      if(player.brink === BRINK_STATUS.ACTIVE){
+        actions += `<button onclick="TC.embraceBrink()">Embrace Brink (reroll everything)</button>`;
+      }
+      actions += `<button class="primary" onclick="TC.confirmOutcome()">Confirm Outcome</button>`;
+    } else {
+      if(lr.currentSuccess && state.gmPool>0 && !lr.gmRolled){
+        actions += `<button class="primary" onclick="TC.rollGM()">🎲 Roll GM Narration Dice</button>`;
+      }
+      if(lr.gmRolled && state.gmBrinkStatus===BRINK_STATUS.ACTIVE && !state.gmBrinkUsed && lr.narrator && lr.narrator.indexOf('GM')===-1){
+        actions += `<button onclick="TC.embraceGMBrink()">Embrace Their Brink (reroll GM pool)</button>`;
+      }
+      if(!lr.seized){
+        actions += `<button class="danger" onclick="TC.seizeNarration()">Seize Narration (${escapeHtml(player.name)}) by blowing out a candle</button>`;
+      }
+      if(!lr.currentSuccess && lr.dire && !state.lastStand){
+        actions += renderSacrificePanel();
+      }
+    }
+    actionsEl.innerHTML = actions || '<span class="empty-note">Roll resolved.</span>';
+
+    if(!lr.resolved){
+      // no extra listeners needed; inline onclicks used via TC namespace
+    }
+  }
+
+  function renderSacrificePanel(){
+    const living = livingPlayers();
+    const dyingOpts = living.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    return `
+      <div class="truths-box" style="margin-top:10px;">
+        <div style="margin-bottom:6px;"><b>Dire Conflict failed.</b> Any character may choose to die heroically and claim narration over the death.</div>
+        <div class="field-row">
+          <select id="sacrifice-player-select" aria-label="Character who sacrifices themselves"><option value="">-- choose character --</option>${dyingOpts}</select>
+          <select id="sacrifice-recipient-select" aria-label="Martyrdom: pass hope die to"><option value="">-- Martyrdom: pass hope die to (optional) --</option>${dyingOpts}</select>
+        </div>
+        <button class="danger" onclick="TC.sacrifice()">Confirm Sacrifice</button>
+      </div>`;
+  }
+
+  function renderMisc(){
+    const extinguishBtn = (state.lastStand && !state.gameOver)
+      ? `<button class="danger" onclick="TC.extinguishFinal()">Extinguish Final Candle (end game)</button>`
+      : '';
+    const darkenBtn = !state.gameOver
+      ? `<button onclick="TC.manualDarken()" title="Darken any candle for a story reason (e.g. it simply burns down)">🕯 Darken a Candle Manually</button>`
+      : '';
+    const html = (extinguishBtn + darkenBtn) || '<span class="empty-note">Nothing else needs attention right now.</span>';
+    document.getElementById('misc-actions').innerHTML = html;
+  }
+
+  function renderThreats(){
+    const el = document.getElementById('threat-panel');
+    if(!el) return;
+    if(!currentThreat){
+      el.innerHTML = `
+        <p class="empty-note">Stuck for what's coming next? Generate a single inciting-incident idea inspired by classic horror &amp; folk horror, plus a line you can read aloud to introduce it.</p>
+        <button class="primary" onclick="TC.randomizeThreats()">🎲 Randomize a Threat from Them</button>
+      `;
+      return;
+    }
+    const t = currentThreat;
+    const hasPrevious = threatHistoryIndex > 0;
+    const hasNext = threatHistoryIndex < threatHistory.length - 1;
+    el.innerHTML = `
+      <div class="threat-card ${introducedThreatId===t.id?'introduced':''}">
+        <div class="threat-col threat-info">
+          <div class="t-title">${introducedThreatId===t.id?'✓ ':''}${escapeHtml(t.title)}</div>
+          <div class="t-insp">inspired by: ${escapeHtml(t.inspiration)}</div>
+          <div class="t-prompt">${escapeHtml(t.prompt)}</div>
+          <div class="t-whisper">${escapeHtml(t.whisper)}</div>
+        </div>
+        <div class="threat-col threat-readaloud">
+          <div class="t-ra-label">🎙 Read Aloud</div>
+          <div class="t-ra-text">${escapeHtml(t.readAloud)}</div>
+        </div>
+        <div class="t-actions">
+          <button onclick="TC.rerollThreat()">🎲 Reroll a Different Threat</button>
+          <button class="success" onclick="TC.introduceThreat()">📜 Introduce This Threat</button>
+        </div>
+        <div class="t-actions t-nav-actions">
+          <button ${hasPrevious?'':'disabled'} onclick="TC.previousThreat()" title="View the threat you generated before this one" aria-label="Previous threat">↶ Previous Threat</button>
+          <button ${hasNext?'':'disabled'} onclick="TC.nextThreat()" title="View the threat you generated after this one" aria-label="Next threat">↷ Next Threat</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Distance in pixels from the bottom within which we treat the log as "already at the bottom"
+  // and safe to auto-scroll — reading it like a chat window that follows new messages, without
+  // yanking the view back down if someone has deliberately scrolled up to read older entries.
+  const LOG_AUTOSCROLL_THRESHOLD_PX = 40;
+
+  function renderLog(){
+    const list = document.getElementById('log-list');
+    const wasNearBottom = (list.scrollHeight - list.scrollTop - list.clientHeight) < LOG_AUTOSCROLL_THRESHOLD_PX;
+    list.innerHTML = state.log.map(e=>
+      `<div class="log-entry${e.isOutcome?' outcome':''}"><span class="time">${e.time}</span><span class="actor">${escapeHtml(e.actor)}</span> ${escapeHtml(e.text)}</div>`
+    ).join('') || '<span class="empty-note">Nothing logged yet.</span>';
+    if(wasNearBottom) list.scrollTop = list.scrollHeight;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // A small hoverable/focusable "i" icon carrying a plain-language explanation in its title
+  // attribute (a native tooltip on hover or keyboard focus), used next to rules terms that
+  // benefit from a quick reminder without permanently taking up space in the layout.
+  function infoIcon(explanation){
+    return `<span class="info-icon" tabindex="0" role="img" aria-label="More info" title="${escapeHtml(explanation)}">i</span>`;
+  }
+
+  function render(){
+    if(!state) return;
+    renderCandles();
+    renderPlayers();
+    renderGM();
+    renderThreats();
+    renderTruths();
+    renderRollControls();
+    renderRollDisplay();
+    renderMisc();
+    renderLog();
+    document.getElementById('undo-btn').disabled = historyStack.length===0;
+    document.getElementById('redo-btn').disabled = futureStack.length===0;
+
+    // wire sacrifice selects if present
+    const sp = document.getElementById('sacrifice-player-select');
+    const sr = document.getElementById('sacrifice-recipient-select');
+    if(sp) sp.addEventListener('change', e=>{ ui.sacrificePlayerId = e.target.value; });
+    if(sr) sr.addEventListener('change', e=>{ ui.sacrificeRecipientId = e.target.value; });
+
+    // wire click-to-edit player name fields (contenteditable spans)
+    document.querySelectorAll('.player-name-edit').forEach(el=>{
+      el.addEventListener('blur', e=>{
+        renamePlayer(e.target.dataset.playerId, e.target.textContent, e.target);
+      });
+      el.addEventListener('keydown', e=>{
+        if(e.key === 'Enter'){ e.preventDefault(); e.target.blur(); }
+        else if(e.key === 'Escape'){
+          e.target.textContent = getPlayer(e.target.dataset.playerId).name;
+          e.target.blur();
+        }
+      });
+      // Prevent pasted rich text/newlines from breaking the single-line name field.
+      el.addEventListener('paste', e=>{
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\s+/g,' ');
+        document.execCommand('insertText', false, text);
+      });
+    });
+  }
+
+  // ======================= SETUP SCREEN WIRING =======================
+  function addPlayerField(defaultVal){
+    const wrap = document.getElementById('player-fields');
+    if(wrap.children.length >= MAX_PLAYER_FIELDS) return;
+    const idx = wrap.children.length + 1;
+    const fieldId = 'player-name-input-' + idx;
+    const div = document.createElement('div');
+    div.className = 'setup-field';
+    div.innerHTML = `<label for="${fieldId}">Player ${idx} Name</label><input type="text" id="${fieldId}" class="player-name-input" placeholder="e.g. Karen">`;
+    wrap.appendChild(div);
+    if(defaultVal) div.querySelector('input').value = defaultVal;
+  }
+  function removePlayerField(){
+    const wrap = document.getElementById('player-fields');
+    if(wrap.children.length > MIN_PLAYER_FIELDS) wrap.removeChild(wrap.lastChild);
+  }
+
+  function toggleFullscreen(){
+    if(!document.fullscreenElement){
+      document.documentElement.requestFullscreen().catch(()=>{});
+    } else {
+      document.exitFullscreen().catch(()=>{});
+    }
+  }
+
+  // ======================= RESIZABLE COLUMNS =======================
+  // Left and right column widths are stored as CSS custom properties on #game-body and
+  // persisted in localStorage so the layout survives reloads. Each resizer is draggable with
+  // the mouse and operable with the keyboard (ArrowLeft/ArrowRight), per WCAG 2.1.1 / 2.5.7.
+  const COLUMN_BOUNDS = {
+    left: { min:220, max:560, cssVar:'--left-w', storageKey:'tc-left-width', grow:1 },
+    right:{ min:260, max:600, cssVar:'--right-w', storageKey:'tc-right-width', grow:-1 }
+  };
+
+  function applyColumnWidth(which, px){
+    const b = COLUMN_BOUNDS[which];
+    const clamped = Math.max(b.min, Math.min(b.max, px));
+    document.getElementById('game-body').style.setProperty(b.cssVar, clamped + 'px');
+    const handle = document.getElementById('resizer-' + which);
+    if(handle) handle.setAttribute('aria-valuenow', String(clamped));
+    try { localStorage.setItem(b.storageKey, String(clamped)); } catch(e){ /* storage unavailable, ignore */ }
+    return clamped;
+  }
+
+  function defaultColumnWidth(which){
+    return which === 'left' ? DEFAULT_LEFT_COLUMN_PX : DEFAULT_RIGHT_COLUMN_PX;
+  }
+
+  function loadColumnWidths(){
+    Object.keys(COLUMN_BOUNDS).forEach(which=>{
+      const b = COLUMN_BOUNDS[which];
+      let stored = null;
+      try { stored = localStorage.getItem(b.storageKey); } catch(e){ /* ignore */ }
+      const px = stored ? parseInt(stored,10) : defaultColumnWidth(which);
+      applyColumnWidth(which, px);
+    });
+  }
+
+  function currentColumnWidth(which){
+    const b = COLUMN_BOUNDS[which];
+    const val = getComputedStyle(document.getElementById('game-body')).getPropertyValue(b.cssVar);
+    return parseInt(val, 10) || defaultColumnWidth(which);
+  }
+
+  function setupColumnResizer(which){
+    const handle = document.getElementById('resizer-' + which);
+    if(!handle) return;
+    const b = COLUMN_BOUNDS[which];
+    handle.setAttribute('aria-valuemin', String(b.min));
+    handle.setAttribute('aria-valuemax', String(b.max));
+    handle.setAttribute('aria-valuenow', String(currentColumnWidth(which)));
+
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    handle.addEventListener('mousedown', e=>{
+      dragging = true;
+      startX = e.clientX;
+      startWidth = currentColumnWidth(which);
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', e=>{
+      if(!dragging) return;
+      const delta = (e.clientX - startX) * b.grow;
+      applyColumnWidth(which, startWidth + delta);
+    });
+    window.addEventListener('mouseup', ()=>{
+      if(dragging){ dragging = false; document.body.style.userSelect = ''; }
+    });
+
+    // Keyboard operability for the same separator widget (WCAG 2.1.1 Keyboard).
+    handle.addEventListener('keydown', e=>{
+      const step = e.shiftKey ? 40 : 12;
+      if(e.key === 'ArrowLeft'){ applyColumnWidth(which, currentColumnWidth(which) - step * b.grow); e.preventDefault(); }
+      else if(e.key === 'ArrowRight'){ applyColumnWidth(which, currentColumnWidth(which) + step * b.grow); e.preventDefault(); }
+      else if(e.key === 'Home'){ applyColumnWidth(which, b.min); e.preventDefault(); }
+      else if(e.key === 'End'){ applyColumnWidth(which, b.max); e.preventDefault(); }
+    });
+  }
+
+  // ======================= INIT =======================
+  document.addEventListener('DOMContentLoaded', ()=>{
+    addPlayerField(); addPlayerField(); addPlayerField(); addPlayerField();
+    document.getElementById('add-player-btn').addEventListener('click', ()=>addPlayerField());
+    document.getElementById('remove-player-btn').addEventListener('click', removePlayerField);
+    document.getElementById('start-game-btn').addEventListener('click', startGame);
+    document.getElementById('skip-setup-btn').addEventListener('click', skipSetup);
+
+    document.getElementById('undo-btn').addEventListener('click', undo);
+    document.getElementById('redo-btn').addEventListener('click', redo);
+    document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
+    document.getElementById('new-game-btn').addEventListener('click', newGame);
+
+    loadColumnWidths();
+    setupColumnResizer('left');
+    setupColumnResizer('right');
+  });
+
+  // Expose functions used by inline onclick handlers
+  window.TC = {
+    burnTrait: burnTrait,
+    embraceBrink: embraceBrink,
+    confirmOutcome: confirmOutcome,
+    rollGM: rollGM,
+    embraceGMBrink: embraceGMBrink,
+    seizeNarration: seizeNarration,
+    sacrifice: sacrifice,
+    manualDarken: manualDarken,
+    extinguishFinal: extinguishFinal,
+    truthSpoken: truthSpoken,
+    speakTogether: speakTogether,
+    swapActiveTrait: swapActiveTrait,
+    activateMoment: activateMoment,
+    activateBrink: activateBrink,
+    activateGMBrink: activateGMBrink,
+    markDeceased: markDeceased,
+    randomizeThreats: randomizeThreats,
+    rerollThreat: rerollThreat,
+    introduceThreat: introduceThreat,
+    previousThreat: previousThreat,
+    nextThreat: nextThreat
+  };
+})();
+</script>
+</body>
+</html>
